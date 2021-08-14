@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Niehorster-Cook"
+  given-names: "Leo"
+  orcid: "https://orcid.org/0000-0002-3196-2259"
+title: "Spreading-Activation"
+version: 1.0.0
+date-released: 2021-08-14
+url: "https://github.com/LeoMNC/Spreading-Activation"
