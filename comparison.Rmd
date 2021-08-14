@@ -1,0 +1,112 @@
+---
+title: "Comparison"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+
+library(igraph)
+library(Rcpp)
+library(spreadr)
+```
+
+```{r}
+raw_data <-
+  read_csv('Spreading_Activation compare-table.csv',skip=6) %>% 
+  dplyr::rename(
+    run_number = `[run number]`,
+    step = `[step]`
+  ) %>% 
+  arrange(
+    run_number,
+    step
+  ) %>% 
+  select(-c(network_style,p,decay))
+  
+```
+```{r}
+converged_data <-
+  raw_data %>% 
+  group_by(run_number) %>% 
+  filter(step == max(step)) %>% 
+  ungroup
+
+converged_data
+```
+
+
+```{r}
+imitate_run <-
+  function(run_num) {
+    run <- filter(converged_data,run_number == run_num)
+    
+    result <-
+      spreadr(
+        network = make_lattice(
+          dim = 1,
+          circular = TRUE,
+          length = run$population[1],
+          nei = run$neighborhood_size[1]
+        ),
+        start_run = data.frame(
+          node = 1,
+          activation = 100
+        ),
+        retention = run$retention[1],
+        
+        time = run$step[1],
+        include_t0 = TRUE
+      
+        ) %>% 
+        filter(node == 1)
+    result$run_number <- run_num
+    return(result)
+  }
+
+
+spreadr_runs <-
+  lapply(
+  X = 1:30,
+  FUN = imitate_run
+  ) %>% 
+  do.call(rbind,.)
+spreadr_runs
+```
+
+```{r}
+raw_data$spreadr_imitation <- spreadr_runs$activation
+raw_data$difference <- raw_data$spreadr_imitation - raw_data$target_act
+raw_data %>% 
+  filter(difference != 0)
+```
+
+
+```{r}
+print(raw_data$difference %>% max)
+print(raw_data$difference %>% min)
+```
+
+```{r}
+ggplot(
+  data = raw_data,
+  mapping = aes(
+    y = difference,
+    x = step,
+    color = neighborhood_size
+    )
+) + 
+geom_line(aes(group = run_number))
+```
+
+```{r}
+ggplot(
+  data = raw_data,
+  mapping = aes(
+    y = difference,
+    x = step,
+    color = retention
+    )
+) + 
+  geom_line(aes(group = run_number))
+```

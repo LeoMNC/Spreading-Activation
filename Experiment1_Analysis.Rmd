@@ -1,0 +1,485 @@
+---
+title: "Experiment1 Analysis"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(ggthemes)
+```
+
+```{r}
+raw_data <-
+  read_csv(
+    file = 'Spreading_Activation experiment1_small-table.csv',
+    skip = 6
+  ) %>%
+  dplyr::rename(
+    run_number = `[run number]`,
+    step = `[step]`
+  ) %>%
+  arrange(
+    run_number,
+    step
+  ) %>%
+  select(-c(network_style,p,decay,neighborhood_size,filename,population)) %>%
+  relocate(c(run_number,step))
+
+raw_data
+```
+
+```{r}
+converged_data <-
+  raw_data %>% 
+  group_by(run_number) %>% 
+  filter(step == max(step)) %>% 
+  ungroup
+```
+
+
+```{r}
+clust_to_edges <-
+  function(deg,cx) {
+    if (deg < 2) {
+      return(0)
+    } else {
+      return(cx * deg * (deg - 1) / 2)
+    }
+  }
+
+rest_of_graph <-
+  function (run_num) {
+    run <- filter(converged_data,run_number == run_num)
+    
+    one_hop <- run$target_deg[1]
+    two_hop <- run$target_clust[1] %>% clust_to_edges(one_hop,.)
+    
+    total_edges <- run$gsize[1]
+    
+    remaining_edges <- total_edges - (one_hop + two_hop)
+    return(remaining_edges)
+  }
+```
+
+```{r}
+converged_data$remaining_edges <- 
+  sapply(converged_data$run_number,rest_of_graph) 
+
+converged_data
+```
+
+```{r}
+filtered_converged <-
+  filter(
+    converged_data,
+    dispersed == TRUE
+  )
+filtered_converged
+```
+
+```{r}
+filtered_data <-
+  raw_data %>% 
+  filter(
+    (run_number %in% filtered_converged$run_number)
+  )
+  
+
+filtered_data
+```
+
+
+```{r}
+lm(
+  data = filter(converged_data,retention == .9,target_deg > 1),
+  formula = target_act ~ (target_deg + target_clust + gsize)
+) %>% 
+  summary()
+```
+```{r}
+lm(
+  data = filter(converged_data,retention == .9,target_deg > 1),
+  formula = target_act ~ (target_deg + target_clust + gsize) ^ 2
+) %>% 
+  summary()
+```
+
+```{r}
+
+#Determining the R Values for object construction
+r_vals <- unique(filtered_data$retention)
+paste_r <- function(x) {
+  y <- paste0('r=',x)
+  return(y)
+}
+names(r_vals) <- 
+  sapply(
+    X = r_vals,
+    FUN = as.character
+    ) %>%
+  sapply(
+    X = .,
+    FUN = paste_r
+    )
+
+#Determining the tick values for object construction
+tick_vals <- 2:200
+paste_tick <- function(x) {
+  y <- paste0('tick',x)
+  return(y)
+}
+
+names(tick_vals) <- sapply(
+  X = tick_vals,
+  FUN = as.character
+) %>% 
+  sapply(
+    X = .,
+    FUN = paste_tick
+  )
+
+
+```
+
+```{r}
+deg_cor <-
+  function(r = .5,ticks = 5) {
+    df <-
+      filtered_data %>% 
+      filter(
+        retention == r,
+        step == ticks
+      )
+    c <- cor(x = df$target_deg,y = df$target_act)
+    return(c)
+  }
+
+deg_cor(r = .5,ticks = 5)
+```
+```{r}
+check_all_r_1 <-
+  function(ticks = 5) {
+    sapply(
+      X = r_vals,
+      FUN = deg_cor,
+      ticks = ticks
+    )
+  }
+check_all_r_1(ticks=5)
+```
+
+```{r}
+deg_cor <-
+  function(r = .5,ticks = 5) {
+    df <-
+      filtered_data %>% 
+      filter(
+        retention == r,
+        step == ticks
+      )
+    c <- cor(x = df$target_deg,y = df$target_act)
+    return(c)
+  }
+
+
+deg_reg <-
+  function(r = .5,ticks = 5) {
+    df <-
+      filtered_data %>% 
+      filter(
+        target_deg > 1,
+        retention == r,
+        step == ticks
+      )
+    model <-
+      lm(
+        data = df,
+        formula = target_act ~ target_deg + target_clust + gsize
+      )
+    return(model$coefficients['target_deg'])
+  }
+
+clust_reg <-
+  function(r = .5,ticks = 5) {
+    df <-
+      filtered_data %>% 
+      filter(
+        target_deg > 1,
+        retention == r,
+        step == ticks
+      )
+    model <-
+      lm(
+        data = df,
+        formula = target_act ~ target_deg + target_clust + gsize
+      )
+    return(model$coefficients['target_clust'])
+  }
+```
+
+
+```{r}
+m1 <-
+  sapply(
+    FUN = check_all_r_1,
+    X = tick_vals,
+    USE.NAMES = TRUE
+) %>% 
+  data.frame 
+
+m1
+```
+
+```{r}
+check_all_r_2_deg <-
+  function(ticks = 5) {
+    sapply(
+      X = r_vals,
+      FUN = deg_reg,
+      ticks = ticks
+    )
+  }
+
+m2_deg <-
+  sapply(
+    FUN = check_all_r_2_deg,
+    X = tick_vals,
+    USE.NAMES = TRUE
+) %>% 
+  data.frame
+
+rownames(m2_deg) <- names(r_vals)
+
+m2_deg
+```
+
+```{r}
+check_all_r_2_clust <-
+  function(ticks = 5) {
+    sapply(
+      X = r_vals,
+      FUN = clust_reg,
+      ticks = ticks
+    )
+  }
+
+m2_clust <-
+  sapply(
+    FUN = check_all_r_2_clust,
+    X = tick_vals,
+    USE.NAMES = TRUE
+) %>% 
+  data.frame
+
+rownames(m2_clust) <- names(r_vals)
+
+m2_clust
+```
+
+
+
+```{r}
+m1_melted <-
+  m1 %>% 
+  add_column(r_vals) %>% 
+  pivot_longer(
+    cols = colnames(m1),
+    ) %>% 
+  mutate(
+    name = sapply(X = .$name,FUN = str_remove,'tick')
+  ) %>% 
+mutate(
+  name = sapply(X = .$name,FUN = as.numeric)
+) %>% 
+  rename(
+    tick = name,
+    retention = r_vals,
+    degree_correlation = value
+  )
+
+m1_melted
+```
+
+```{r}
+fig1 <- 
+  ggplot(
+    data = filter(m1_melted,tick <= 50),
+    mapping = aes(
+      x = tick,
+      y = degree_correlation,
+      color = factor(retention),
+      group = retention
+    )
+  ) +
+  geom_line() +
+  scale_x_continuous(
+    limits = c(0,50)
+    ) +
+  labs(
+    title = 'Figure 1',
+    subtitle = 'Correlation between Target Node Degree and Activation over Time',
+    color = 'Retention Parameter',
+    y = 'Correlation between Degree and Activation'
+    )
+
+fig1
+```
+
+Nice color scheme! Here I steal it for future use.
+```{r}
+colors <- 
+  ggplot_build(fig1)$data[[1]]['colour'] %>%
+  unique() %>% 
+  `row.names<-`(NULL)
+
+color_vector <- colors$colour
+```
+
+```{r}
+m2_deg_melted <-
+  m2_deg %>% 
+  add_column(r_vals) %>% 
+  pivot_longer(
+    cols = colnames(m2_deg),
+    ) %>% 
+  mutate(
+    name = sapply(X = .$name,FUN = str_remove,'tick')
+  ) %>% 
+  mutate(
+    name = sapply(X = .$name,FUN = as.numeric)
+  ) %>% 
+    rename(
+      tick = name,
+      retention = r_vals,
+      degree_param = value
+    )
+
+m2_clust_melted <-
+  m2_clust %>% 
+  add_column(r_vals) %>% 
+  pivot_longer(
+    cols = colnames(m2_clust),
+    ) %>% 
+  mutate(
+    name = sapply(X = .$name,FUN = str_remove,'tick')
+  ) %>% 
+  mutate(
+    name = sapply(X = .$name,FUN = as.numeric)
+  ) %>% 
+  rename(
+    tick = name,
+    retention = r_vals,
+    clustering_param = value
+  )
+
+m2_melted <-
+  m2_deg_melted %>% 
+  add_column(clustering_param = m2_clust_melted$clustering_param)
+
+m2_melted
+```
+
+```{r}
+fig2 <- 
+  ggplot(
+    data = filter(m2_melted,tick <= 50),
+    mapping = aes(
+      x = tick,
+      y = degree_param,
+      color = factor(retention),
+      group = retention
+    )
+  ) +
+  geom_line() +
+  scale_x_continuous(
+    #minor_breaks = seq(0:50),
+    #limits = c(2,50)
+  ) +
+  labs(
+    title = 'Figure 2',
+    subtitle = 'Analysis 2 - Degree Parameter over Time',
+    color = 'Retention Parameter',
+    y = 'Regression Coefficient for Degree'
+  ) +
+  scale_color_manual(values = color_vector)
+
+fig2
+```
+
+
+```{r}
+ggplot(
+  data = m2_melted,
+  mapping = aes(
+    x = tick,
+    y = clustering_param,
+    color = factor(retention),
+    group = retention
+  )
+) +
+  geom_line() +
+  scale_x_continuous(
+    limits = c(2,50)
+  ) +
+  labs(
+    title = 'Figure 3',
+    subtitle = 'Analysis 2 - Clustering Parameter over Time',
+    color = 'Retention Parameter',
+    y = 'Regression Parameter for C(x)'
+  ) 
+
+
+```
+
+
+```{r}
+cutoff <- .5
+fig31 <-
+  ggplot(
+    data = filter(m2_melted,retention >= cutoff),
+    mapping = aes(
+      x = tick,
+      y = clustering_param,
+      color = factor(retention),
+      group = retention
+    )
+  ) +
+  geom_line() +
+  labs(
+    title = paste('Figure 3.1 - Retention >=',(cutoff)),
+    subtitle = 'Analysis 2 - Clustering Parameter over Time',
+    color = 'Retention Parameter',
+    y = 'Regression Parameter for C(x)'
+  ) +
+  scale_color_manual(values = color_vector[(cutoff * 10):10])
+
+fig31
+```
+
+Note that, while the target node's degree has effects on the possible values for the clustering coefficient, the distribution of C(x) for any given value of degree is centered around 0.10.
+
+```{r}
+ggplot(
+  data = filtered_converged %>% filter(target_deg > 1),
+  mapping = aes(
+    x = target_deg,
+    y = target_clust
+    )
+  ) + 
+  geom_smooth(method='lm',color='black') +
+  geom_point() +
+  scale_y_continuous(breaks = seq(0,1,.1)) +
+  scale_x_continuous(breaks = seq(0,25,5)) +
+  labs(x = 'Degree of Target Node',y = 'C(x) of Target Node')
+```
+
+
+```{r}
+ggplot(
+  data = filtered_converged %>% filter(target_deg > 1),
+  mapping = aes(
+    x = target_deg,
+    )
+  ) + 
+  geom_histogram(bins = length(unique(filtered_converged$target_deg )))
+```
